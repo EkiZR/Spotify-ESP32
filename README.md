@@ -202,39 +202,7 @@ Untuk kembali ke sesi:
 screen -r spotify-bot
 ```
 
-### 4. Alternatif: pakai `systemd` (lebih proper)
-
-Buat file service:
-```bash
-sudo nano /etc/systemd/system/spotify-oled.service
-```
-
-Isi:
-```ini
-[Unit]
-Description=Spotify OLED Discord Bot
-After=network.target
-
-[Service]
-User=ubuntu
-WorkingDirectory=/home/ubuntu/spotify-oled
-ExecStart=/usr/bin/python3 /home/ubuntu/spotify-oled/bot.py
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Aktifkan:
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable spotify-oled
-sudo systemctl start spotify-oled
-sudo systemctl status spotify-oled
-```
-
-### 5. Buka port firewall di VPS
+### 4. Buka port firewall di VPS
 
 ```bash
 sudo ufw allow 3000
