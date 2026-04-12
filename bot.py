@@ -13,20 +13,20 @@ from aiohttp import web
 BOT_TOKEN   = ""
 USER_ID     = ""        # ganti dengan Discord user ID kamu
 PORT        = 3000
-LYRIC_LEAD  = 2.4              
+LYRIC_LEAD  = 2.4
 
 # ════════════════════════════════════════════════════════
 #  STATE
 # ════════════════════════════════════════════════════════
-current = {}      # data lagu sekarang
-lyrics  = {       # cache lirik
+current = {}
+lyrics  = {
     "key":      "",
     "lines":    [],
     "duration": 0,
 }
 
 # ════════════════════════════════════════════════════════
-#  FETCH LIRIK — lrclib.net
+#  FETCH LIRIK — RETRY VERSION
 # ════════════════════════════════════════════════════════
 def fetch_lyrics(artist, title):
     url = (
@@ -34,37 +34,45 @@ def fetch_lyrics(artist, title):
         f"?artist_name={urllib.parse.quote(artist)}"
         f"&track_name={urllib.parse.quote(title)}"
     )
-    try:
-        req = urllib.request.Request(
-            url, headers={"User-Agent": "ESP32-Spotify/1.0"}
-        )
-        with urllib.request.urlopen(req, timeout=5) as res:
-            data = json.loads(res.read())
 
-        synced   = data.get("syncedLyrics", "") or ""
-        plain    = data.get("plainLyrics",  "") or ""
-        duration = data.get("duration", 0)
-        lines    = []
+    for attempt in range(3):  # 🔁 retry 3x
+        try:
+            req = urllib.request.Request(
+                url, headers={"User-Agent": "ESP32-Spotify/1.0"}
+            )
 
-        if synced:
-            for line in synced.split("\n"):
-                m = re.match(r'\[(\d+):(\d+\.\d+)\](.*)', line)
-                if m:
-                    secs = int(m.group(1)) * 60 + float(m.group(2))
-                    text = m.group(3).strip()
-                    if text:
-                        lines.append({"time": secs, "text": text})
-        elif plain:
-            lines = [
-                {"time": 0, "text": l.strip()}
-                for l in plain.split("\n") if l.strip()
-            ]
+            with urllib.request.urlopen(req, timeout=10) as res:
+                data = json.loads(res.read())
 
-        return lines, duration
+            synced   = data.get("syncedLyrics", "") or ""
+            plain    = data.get("plainLyrics",  "") or ""
+            duration = data.get("duration", 0)
+            lines    = []
 
-    except Exception as e:
-        print(f"[lrclib] error: {e}")
-        return [], 0
+            if synced:
+                for line in synced.split("\n"):
+                    m = re.match(r'\[(\d+):(\d+\.\d+)\](.*)', line)
+                    if m:
+                        secs = int(m.group(1)) * 60 + float(m.group(2))
+                        text = m.group(3).strip()
+                        if text:
+                            lines.append({"time": secs, "text": text})
+
+            elif plain:
+                lines = [
+                    {"time": 0, "text": l.strip()}
+                    for l in plain.split("\n") if l.strip()
+                ]
+
+            print(f"[lrclib] success ({len(lines)} lines)")
+            return lines, duration
+
+        except Exception as e:
+            print(f"[lrclib] retry {attempt+1}/3 error: {e}")
+            time.sleep(1)
+
+    print("[lrclib] failed after 3 retries")
+    return [], 0
 
 # ════════════════════════════════════════════════════════
 #  AMBIL LIRIK SESUAI POSISI
@@ -76,17 +84,15 @@ def get_lyric(progress_secs):
     if not lines:
         return {"prev": "", "curr": "", "next": ""}
 
-    # plain lyrics — tidak ada timestamp
     if lines[0]["time"] == 0:
         total = duration or 200
         i = min(int((progress_secs / total) * len(lines)), len(lines) - 1)
         return {
-            "prev": lines[i-1]["text"] if i > 0          else "",
+            "prev": lines[i-1]["text"] if i > 0 else "",
             "curr": lines[i]["text"],
             "next": lines[i+1]["text"] if i+1 < len(lines) else "",
         }
 
-    # synced lyrics — ada timestamp
     idx = 0
     for i, line in enumerate(lines):
         if line["time"] <= progress_secs:
@@ -95,15 +101,15 @@ def get_lyric(progress_secs):
             break
 
     return {
-        "prev": lines[idx-1]["text"] if idx > 0             else "",
+        "prev": lines[idx-1]["text"] if idx > 0 else "",
         "curr": lines[idx]["text"],
-        "next": lines[idx+1]["text"] if idx+1 < len(lines)  else "",
+        "next": lines[idx+1]["text"] if idx+1 < len(lines) else "",
     }
 
 # ════════════════════════════════════════════════════════
 #  DISCORD BOT
 # ════════════════════════════════════════════════════════
-intents          = discord.Intents.default()
+intents = discord.Intents.default()
 intents.presences = True
 intents.members   = True
 
@@ -116,11 +122,9 @@ async def on_ready():
 
 @bot.event
 async def on_presence_update(before, after):
-    # abaikan kalau bukan user kita
     if after.id != USER_ID:
         return
 
-    # cari activity Spotify
     spotify = next(
         (a for a in after.activities if isinstance(a, discord.Spotify)),
         None
@@ -135,14 +139,13 @@ async def on_presence_update(before, after):
     title  = spotify.title
     key    = f"{artist}|{title}"
 
-    # fetch lirik kalau lagu baru
     if lyrics["key"] != key:
         print(f"[bot] new track: {artist} - {title}")
         lines, duration = await asyncio.get_event_loop().run_in_executor(
             None, fetch_lyrics, artist, title
         )
         lyrics.update({"key": key, "lines": lines, "duration": duration})
-        print(f"[lrclib] {len(lines)} lines, {duration}s")
+        print(f"[lrclib] final: {len(lines)} lines, {duration}s")
 
     current.update({
         "playing":     True,
@@ -156,7 +159,7 @@ async def on_presence_update(before, after):
     })
 
 # ════════════════════════════════════════════════════════
-#  HTTP SERVER — endpoint untuk ESP32
+#  HTTP SERVER
 # ════════════════════════════════════════════════════════
 async def handle_now_playing(request):
     if not current.get("playing"):
@@ -164,7 +167,7 @@ async def handle_now_playing(request):
 
     now      = time.time()
     pos_ms   = int((now - current["start_epoch"]) * 1000)
-    pos_secs = pos_ms / 1000 + LYRIC_LEAD   # lead sama seperti Node.js lama
+    pos_secs = pos_ms / 1000 + LYRIC_LEAD
 
     lyric = get_lyric(pos_secs)
 
@@ -191,20 +194,19 @@ async def handle_debug(request):
     })
 
 # ════════════════════════════════════════════════════════
-#  MAIN — jalankan bot + HTTP server bersamaan
+#  MAIN
 # ════════════════════════════════════════════════════════
 async def main():
-    # setup HTTP server
     app = web.Application()
     app.router.add_get("/now-playing", handle_now_playing)
-    app.router.add_get("/debug",       handle_debug)
+    app.router.add_get("/debug", handle_debug)
 
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", PORT).start()
+
     print(f"[server] http://0.0.0.0:{PORT}/now-playing")
 
-    # jalankan Discord bot
     await bot.start(BOT_TOKEN)
 
 asyncio.run(main())
