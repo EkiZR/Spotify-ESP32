@@ -172,8 +172,44 @@ Contoh response saat musik diputar:
 ---
 
 ## ☁️ Deploy ke VPS (Opsional tapi Direkomendasikan)
-
+ 
 Kalau mau bot jalan 24/7 tanpa PC nyala, gunakan VPS (Contoh: DigitalOcean, Vultr, Contabo, dll.).
+ 
+### 0. Cara Dapat IP Publik VPS
+ 
+IP publik VPS kamu bisa dilihat dari beberapa cara:
+ 
+**Cara 1 — Dari dashboard provider VPS**
+Setelah beli VPS, IP publik langsung tertera di halaman dashboard/panel kontrol provider kamu (DigitalOcean, Vultr, Contabo, dll.). Biasanya ditampilkan sebagai *"IP Address"* atau *"IPv4"*.
+ 
+**Cara 2 — Dari dalam VPS lewat SSH**
+Setelah login ke VPS via SSH, jalankan salah satu perintah ini:
+ 
+```bash
+# Cara paling simpel
+curl ifconfig.me
+ 
+# Alternatif
+curl ipinfo.io/ip
+ 
+# Atau lihat dari network interface
+ip a
+# Cari bagian eth0 atau ens3, lihat baris "inet x.x.x.x"
+```
+ 
+Contoh output `curl ifconfig.me`:
+```
+103.28.xx.xx
+```
+ 
+IP itulah yang dipakai di `SERVER_URL` pada `esp32.ino`:
+```cpp
+const char* SERVER_URL = "http://103.28.xx.xx:3000/now-playing";
+```
+ 
+> 💡 IP publik VPS bersifat **tetap (static)** — tidak berubah selama kamu tidak rebuild/hapus VPS. Berbeda dengan IP rumah yang bisa berubah sewaktu-waktu.
+ 
+---
 
 ### 1. Upload file ke VPS
 
