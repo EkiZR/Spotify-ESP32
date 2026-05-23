@@ -331,7 +331,6 @@ Returns the structural status of the active tracking stream parameters:
 Created by EkiZR
 
 Instagram: https://www.instagram.com/ekizr_/?hl=id
-
 ```
 
 ```
