@@ -143,7 +143,7 @@ python bot.py
 Expected operational terminal output structure:
 
 ```
-[server] HTTP API initialized at [http://0.0.0.0:3000/now-playing](http://0.0.0.0:3000/now-playing)
+[server] HTTP API initialized at [http://0.0.0.0:3000/now-playing]
 [bot] Logged in successfully as YourBotName#1234
 [bot] Monitoring target Discord User ID: 123456789012345678
 
@@ -264,7 +264,7 @@ Adjust your hardware pointers to match your localized routing metrics:
 ```cpp
 const char* WIFI_SSID  = "Your_WiFi_Network_Name";
 const char* WIFI_PASS  = "Your_WiFi_Password";
-const char* SERVER_URL = "[http://192.168.3.37:3000/now-playing](http://192.168.3.37:3000/now-playing)";
+const char* SERVER_URL = "http://192.168.3.37:3000/now-playing";  // Change to your server using IPV4 address. "
 
 ```
 
