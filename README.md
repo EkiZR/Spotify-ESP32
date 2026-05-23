@@ -1,415 +1,337 @@
 # 🎵 Spotify OLED Display — ESP32 + Discord Bot
 
-Proyek ini menampilkan lagu Spotify yang sedang kamu putar **secara real-time** di layar OLED 1.3" (SH1106 128×64), lengkap dengan **lirik sinkron**, animasi mata idle, progress bar, dan equalizer animasi.
+This project displays your currently playing Spotify track **in real-time** on a 1.3" OLED display (SH1106 128×64), featuring **synchronized lyrics**, an animated idle expression system, a music progress bar, and an on-screen equalizer.
 
 ---
 
-## 🗂️ Struktur Proyek
+## 🗂️ Project Structure
+
 
 ```
-├── bot.py          # Discord bot + HTTP server (dijalankan di VPS/PC)
-├── esp32.ino       # Firmware Arduino untuk ESP32
+
+├── bot.py          # Discord bot + HTTP JSON API server (runs on VPS/PC)
+├── esp32.ino       # Arduino firmware tailored for ESP32
 └── README.md
+
 ```
 
 ---
 
-## 🧠 Cara Kerja
+## 🧠 How It Works
+
 
 ```
+
 Spotify ──► Discord (Rich Presence) ──► Discord Bot (Python)
-                                              │
-                                    Ambil lirik dari lrclib.net
-                                              │
-                                    Serve via HTTP :3000
-                                              │
-                                         ESP32 polling
-                                              │
-                                     Tampil di OLED SH1106
+│
+Fetch synced lyrics from lrclib.net
+│
+Serve via HTTP Endpoint :3000
+│
+ESP32 Network Polling
+│
+Render on OLED SH1106
+
 ```
 
-1. Kamu main Spotify → Discord otomatis detect aktivitas
-2. Bot Discord (`bot.py`) baca data lagu dari Discord presence
-3. Bot fetch lirik dari [lrclib.net](https://lrclib.net) (gratis, no API key)
-4. ESP32 polling endpoint `/now-playing` setiap 2 detik
-5. OLED tampilkan judul, artist, lirik sinkron, dan progress bar
+1. You play a track on Spotify → Discord automatically broadcasts your activity via Rich Presence.
+2. The Python Discord bot (`bot.py`) captures this real-time presence data.
+3. The bot automatically fetches timestamped lyrics from [lrclib.net](https://lrclib.net) (Free, no API key required).
+4. The ESP32 micro-controller continuously polls the local/public server endpoint `/now-playing` every 2 seconds.
+5. The OLED display renders the dynamic track title, artist name, synchronized lyric line highlights, and a micro-progress bar.
 
 ---
 
-## 🎧 Prasyarat — Hubungkan Spotify ke Discord
+## 🎧 Prerequisites — Connecting Spotify to Discord
 
-Bot ini bekerja dengan membaca **Discord Presence** (status aktivitas) yang otomatis muncul saat kamu main Spotify. Supaya ini bisa terbaca, kamu harus pastikan Spotify sudah terhubung ke Discord dulu.
+The backend system functions by reading your **Discord Presence** broadcast data. For the script to hook into your activity, your Spotify profile must be linked to Discord.
 
-### Langkah-langkah:
+### Step-by-Step Integration:
 
-1. Buka **Discord** → klik ikon ⚙️ **User Settings** (pojok kiri bawah)
-2. Di sidebar kiri, pilih **Connections**
-3. Klik ikon **Spotify** (logo hijau)
-4. Login ke akun Spotify kamu di browser yang muncul → klik **Agree**
-5. Setelah berhasil, Spotify akan muncul di daftar koneksi
+1. Launch **Discord** → click the ⚙️ **User Settings** icon (bottom-left corner).
+2. On the left sidebar, navigate to **Connections**.
+3. Click the **Spotify** icon (the green circular logo).
+4. Log into your Spotify account via the external browser pop-up → authorize by clicking **Agree**.
+5. Once finalized, Spotify will be listed under your active accounts grid.
 
-### Aktifkan "Display on profile":
+### Activating Profile Broadcasting:
 
-Setelah Spotify terhubung, pastikan toggle **"Display Spotify as your status"** dalam keadaan **ON** (hijau).
+Once your Spotify account is connected, verify that the toggle switch labeled **"Display Spotify as your status"** is actively flipped **ON** (Green).
 
-> ⚠️ Kalau toggle ini mati, Discord tidak akan broadcast aktivitas Spotify kamu, dan bot **tidak akan bisa membaca lagu yang sedang diputar**.
+> ⚠️ **CRITICAL:** If this toggle remains disabled, Discord will block your Spotify streaming metrics, making it impossible for the Python server backend to scrape your music status.
 
-### Cek status Discord kamu:
+### Checking Discord Visibility Status:
 
-Pastikan status kamu **bukan** Invisible. Bot hanya bisa membaca presence kalau status kamu Online, Idle, atau Do Not Disturb.
+Ensure that your public Discord visibility status is **NOT** configured to *Invisible*. The presence payload can only be fetched when set to:
 
 ```
-✅ Online       → bisa terbaca
-✅ Idle         → bisa terbaca
-✅ Do Not Disturb → bisa terbaca
-❌ Invisible    → TIDAK terbaca
+
+✅ Online        → Accessible
+✅ Idle          → Accessible
+✅ Do Not Disturb → Accessible
+❌ Invisible    → INACCESSIBLE (Blocks Data Payload)
+
 ```
 
 ---
 
-## 🖥️ Bagian 1 — Setup Bot Python (VPS / PC)
+## 🖥️ Section 1 — Python Server Backend Setup (VPS / PC)
 
-### Requirement
+### Requirements
 
-| Software | Versi minimal |
-|----------|--------------|
-| Python | 3.9+ |
-| pip | terbaru |
+| Software | Minimum Version |
+|----------|-----------------|
+| Python   | 3.9+            |
+| pip      | Latest stable   |
 
-### Install Dependencies
+### Dependency Installation
 
-Pastikan Python sudah terinstall dulu. Cek dengan:
+Ensure Python is actively initialized inside your system variable PATH layout. Verify via your command terminal:
 ```bash
 python --version
-# atau
+# or alternatively
 python3 --version
+
 ```
 
-Kalau belum ada, download di [python.org](https://www.python.org/downloads/) → centang **"Add Python to PATH"** saat install (Windows).
-
-Setelah Python siap, install library yang dibutuhkan:
+Execute the command below to install the core asynchronous wrappers:
 
 ```bash
 pip install discord.py aiohttp
+
 ```
 
-atau kalau pakai `pip3`:
-```bash
-pip3 install discord.py aiohttp
-```
+> ⚙️ **Note:** This structure requires **discord.py version 2.x** or greater. If your environment maintains an antiquated legacy setup, flush it via: `pip uninstall discord.py` followed by `pip install "discord.py>=2.0"`.
 
-Verifikasi berhasil terinstall:
-```bash
-pip show discord.py
-pip show aiohttp
-```
+### Local Script Adjustments inside `bot.py`
 
-> **Catatan:** `discord.py` yang dibutuhkan adalah versi **2.x** (bukan yang lama). Kalau sebelumnya pernah install versi lama, uninstall dulu:
-> ```bash
-> pip uninstall discord.py
-> pip install "discord.py>=2.0"
-> ```
-
-### Konfigurasi di `bot.py`
-
-Buka `bot.py`, edit bagian ini:
+Open `bot.py` using your preferred IDE, and input your credential keys:
 
 ```python
-BOT_TOKEN = "isi_token_bot_kamu_di_sini"
-USER_ID   = 123456789012345678   # Discord User ID kamu (bukan username)
-PORT      = 3000                  # Port HTTP server
-LYRIC_LEAD = 2.4                  # Detik offset lirik (sesuaikan selera)
+BOT_TOKEN  = "YOUR_DISCORD_BOT_TOKEN_HERE"
+USER_ID    = 123456789012345678   # Your absolute Discord Snowflake User ID
+PORT       = 3000                  # Designated local network port layout
+LYRIC_LEAD = 2.4                  # Time offset in seconds (delivers lyrics early)
+
 ```
 
-#### Cara dapat `BOT_TOKEN`:
-1. Buka [Discord Developer Portal](https://discord.com/developers/applications)
-2. Klik **New Application** → beri nama
-3. Masuk ke menu **Bot** → klik **Reset Token** → copy tokennya
-4. Di menu **Privileged Gateway Intents**, aktifkan:
-   - ✅ **Presence Intent**
-   - ✅ **Server Members Intent**
-5. Masuk menu **OAuth2 → URL Generator**, centang `bot`, lalu centang permission `Read Messages/View Channels`
-6. Copy URL yang dihasilkan → buka di browser → invite bot ke server Discord kamu
+#### Acquiring your `BOT_TOKEN`:
 
-#### Cara dapat `USER_ID`:
-1. Buka Discord → Settings → Advanced → aktifkan **Developer Mode**
-2. Klik kanan nama kamu → **Copy User ID**
+1. Navigate to the [Discord Developer Portal](https://discord.com/developers/applications).
+2. Click **New Application** → define a custom application name.
+3. Access the **Bot** tab → click **Reset Token** → copy the alphanumeric string securely.
+4. Scroll down to **Privileged Gateway Intents**, and explicitly enable:
+* ✅ **Presence Intent**
+* ✅ **Server Members Intent**
 
-### Jalankan Bot
+
+5. Move to **OAuth2 → URL Generator**, check the `bot` scope checkbox, and assign the `Read Messages/View Channels` permission flag.
+6. Copy the compiled URL script → paste it into your web browser tab → invite your custom bot into your target Discord server setup.
+
+#### Acquiring your `USER_ID`:
+
+1. Open Discord Settings → Advanced → toggle **Developer Mode** to ON.
+2. Right-click on your absolute user profile avatar image element → click **Copy User ID**.
+
+### Executing the Host Script
 
 ```bash
 python bot.py
+
 ```
 
-Output yang benar:
-```
-[server] http://0.0.0.0:3000/now-playing
-[bot] logged in as NamaBotKamu#1234
-[bot] watching user ID: 713597471414026240
-```
+Expected operational terminal output structure:
 
-### Test Manual
-
-Buka browser atau curl ke:
 ```
-http://localhost:3000/now-playing
-```
+[server] HTTP API initialized at [http://0.0.0.0:3000/now-playing](http://0.0.0.0:3000/now-playing)
+[bot] Logged in successfully as YourBotName#1234
+[bot] Monitoring target Discord User ID: 123456789012345678
 
-Contoh response saat musik diputar:
-```json
-{
-  "title": "Blinding Lights",
-  "artist": "The Weeknd",
-  "playing": true,
-  "position_ms": 45000,
-  "duration_ms": 200000,
-  "lyric_prev": "I've been tryna call",
-  "lyric_curr": "I need your love",
-  "lyric_next": "I've been on my own for long enough"
-}
 ```
 
 ---
 
-## ☁️ Deploy ke VPS (Opsional tapi Direkomendasikan)
- 
-Kalau mau bot jalan 24/7 tanpa PC nyala, gunakan VPS (Contoh: DigitalOcean, Vultr, Contabo, dll.).
- 
-### 0. Cara Dapat IP Publik VPS
- 
-IP publik VPS kamu bisa dilihat dari beberapa cara:
- 
-**Cara 1 — Dari dashboard provider VPS**
-Setelah beli VPS, IP publik langsung tertera di halaman dashboard/panel kontrol provider kamu (DigitalOcean, Vultr, Contabo, dll.). Biasanya ditampilkan sebagai *"IP Address"* atau *"IPv4"*.
- 
-**Cara 2 — Dari dalam VPS lewat SSH**
-Setelah login ke VPS via SSH, jalankan salah satu perintah ini:
- 
-```bash
-# Cara paling simpel
-curl ifconfig.me
- 
-# Alternatif
-curl ipinfo.io/ip
- 
-# Atau lihat dari network interface
-ip a
-# Cari bagian eth0 atau ens3, lihat baris "inet x.x.x.x"
+## ☁️ Cloud VPS Deployment (Recommended for 24/7 Uptime)
+
+To prevent your local hardware machine from needing to remain constantly active, deploy the script onto an external virtual private cloud server framework (e.g., DigitalOcean, Vultr, AWS, Contabo).
+
+### 0. Mapping Your Server's Architecture Interface
+
+Local machine configurations point towards an internal routing system. When operating on a cloud network or local mesh framework, verify your active connectivity pointers:
+
+* **Local Machine Deployment (Same Local Wi-Fi Mesh):**
+Run `ipconfig` inside your Windows command terminal. For example, your assigned network adapter IP address might display as:
 ```
- 
-Contoh output `curl ifconfig.me`:
+IPv4 Address. . . . . . . . . . . : 192.168.3.37
+
 ```
-103.28.xx.xx
-```
- 
-IP itulah yang dipakai di `SERVER_URL` pada `esp32.ino`:
+
+
+This explicit string acts as your localized hardware path index inside `esp32.ino`:
 ```cpp
-const char* SERVER_URL = "http://103.28.xx.xx:3000/now-playing";
+const char* SERVER_URL = "[http://192.168.3.37:3000/now-playing](http://192.168.3.37:3000/now-playing)";
+
 ```
- 
-> 💡 IP publik VPS bersifat **tetap (static)** — tidak berubah selama kamu tidak rebuild/hapus VPS. Berbeda dengan IP rumah yang bisa berubah sewaktu-waktu.
- 
+
+
+*Note: Localhost loops (`127.0.0.1`) are internal to your PC and will fail if called externally by the ESP32.*
+* **Cloud VPS Deployment Architecture:**
+Scrape your dynamic public address mapping from your cloud platform infrastructure administration console panel, or ping an external echo route from your active SSH session console:
+```bash
+curl ifconfig.me
+
+```
+
+
+Apply the returned public routing string value directly to your ESP32 configuration block layout.
+
 ---
 
-### 1. Upload file ke VPS
+### 1. File Push Protocol
 
 ```bash
-scp bot.py user@ip-vps-kamu:/home/user/spotify-oled/
+scp bot.py root@your-vps-ip-address:/home/user/spotify-oled/
+
 ```
 
-### 2. Install Python & dependencies di VPS
+### 2. Dependency Resolution inside the Linux Host
 
 ```bash
 sudo apt update
 sudo apt install python3 python3-pip -y
 pip3 install discord.py aiohttp
+
 ```
 
-### 3. Jalankan pakai `screen` (biar tetap jalan walau SSH ditutup)
+### 3. Background Persistence Management via `screen`
 
 ```bash
 screen -S spotify-bot
 python3 bot.py
-# Tekan Ctrl+A lalu D untuk detach
+# Detach cleanly by executing the key sequence: Ctrl + A, then press D
+
 ```
 
-Untuk kembali ke sesi:
+To re-attach to the ongoing terminal execution block thread:
+
 ```bash
 screen -r spotify-bot
+
 ```
 
-### 4. Buka port firewall di VPS
+### 4. Firewall Rule Authorization Mapping
 
 ```bash
 sudo ufw allow 3000
-```
 
-> ⚠️ **Keamanan:** Port 3000 akan terbuka ke publik. Kalau ingin lebih aman, batasi hanya IP tertentu yang bisa akses, atau gunakan VPN.
+```
 
 ---
 
-## 🔌 Bagian 2 — Setup ESP32
+## 🔌 Section 2 — ESP32 Hardware Integration
 
-### Hardware yang Dibutuhkan
+### Hardware Checklist
 
-| Komponen | Keterangan |
-|----------|-----------|
-| ESP32 (board apapun) | NodeMCU ESP32, WEMOS, dll |
-| OLED SH1106 128×64 | Koneksi I2C |
-| Kabel jumper | 4 kabel |
+| Component Name | Specific Metric Model Layout |
+| --- | --- |
+| ESP32 DevKit | NodeMCU ESP32, WEMOS D1 R32, etc. |
+| OLED Screen | SH1106 1.3-inch 128×64 (I2C interface) |
+| Jumper Cables | Female-to-Female physical wires |
 
-### Wiring I2C
+### Pinout Wiring Diagram (I2C Layout)
 
 ```
-ESP32        OLED SH1106
-GPIO 21  ──► SDA
-GPIO 22  ──► SCL
-3.3V     ──► VCC
-GND      ──► GND
+ESP32 Microcontroller      SH1106 OLED Display Panel
+      GPIO 21 ───────────► SDA (Serial Data Bus)
+      GPIO 22 ───────────► SCL (Serial Clock Bus)
+      3.3V    ───────────► VCC (Power Input Line)
+      GND     ───────────► GND (Common Ground Earth)
+
 ```
 
-### Library Arduino yang Diperlukan
+### Essential Arduino IDE Libraries
 
-Buka Arduino IDE, lalu buka **Library Manager** lewat:
-- Menu **Sketch → Include Library → Manage Libraries...**
-- atau tekan `Ctrl+Shift+I`
+Launch your local Arduino desktop IDE interface, and open the integrated asset panel manager through **Tools → Manage Libraries...** (`Ctrl + Shift + I`). Search for and install:
 
-Cari dan install satu per satu:
+1. **U8g2** (Maintained by **oliver**) — Specialized high-performance monochrome graphics handler. *Select "Install All" to fulfill nested elements.*
+2. **ArduinoJson** (Maintained by **Benoit Blanchon**) — Optimized micro-parsing buffer stream logic framework.
+3. **HTTPClient & WiFi** — Native baseline micro-firmware drivers included directly with the core Espressif ESP32 hardware index framework stack.
 
-**1. U8g2**
-- Ketik di pencarian: `U8g2`
-- Pilih yang by **oliver** (bukan U8x8)
-- Klik **Install** → kalau muncul popup *"Install dependencies?"* klik **Install All**
+### Firmware Setup & Variable Compilation inside `esp32.ino`
 
-**2. ArduinoJson**
-- Ketik di pencarian: `ArduinoJson`
-- Pilih yang by **Benoit Blanchon**
-- Klik **Install**
-
-**3. HTTPClient & WiFi**
-- Kedua library ini **sudah bawaan** saat board ESP32 terinstall, tidak perlu install manual
-- Kalau muncul error `HTTPClient.h not found`, berarti board ESP32 belum terinstall (lihat langkah di bawah)
-
-### Install ESP32 Board di Arduino IDE
-
-1. Buka **File → Preferences**
-2. Di kolom *Additional Board Manager URLs*, tambahkan:
-   ```
-   https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
-   ```
-3. Buka **Tools → Board → Board Manager** → cari `esp32` → Install
-
-### Konfigurasi di `esp32.ino`
+Adjust your hardware pointers to match your localized routing metrics:
 
 ```cpp
-const char* WIFI_SSID  = "NamaWiFiKamu";
-const char* WIFI_PASS  = "PasswordWiFiKamu";
-const char* SERVER_URL = "http://192.168.x.x:3000/now-playing";
-//                                  ↑ IP VPS atau IP PC yang jalankan bot.py
+const char* WIFI_SSID  = "Your_WiFi_Network_Name";
+const char* WIFI_PASS  = "Your_WiFi_Password";
+const char* SERVER_URL = "[http://192.168.3.37:3000/now-playing](http://192.168.3.37:3000/now-playing)";
+
 ```
 
-> Kalau bot jalan di PC lokal (jaringan sama): pakai IP lokal PC kamu.
-> Kalau bot jalan di VPS: pakai IP publik VPS kamu.
+### Flashing Code into the Board Environment
 
-### Upload ke ESP32
-
-1. Pilih board: **Tools → Board → ESP32 Dev Module**
-2. Pilih port COM yang benar
-3. Klik **Upload**
+1. Select your target development architecture node framework via **Tools → Board → ESP32 Dev Module**.
+2. Identify your active interface device layout path index via the **Tools → Port** listing matrix.
+3. Initialize execution by clicking the **Upload** arrow icon.
 
 ---
 
-## 📺 Tampilan Layar
+## 🔧 Deep-Dive System Troubleshooting
 
-### Idle (tidak ada musik)
-Menampilkan animasi mata dengan berbagai ekspresi acak (kedip, wink, senang, ngantuk, kaget, dll.) dan teks `SPOTIFY IS SLEEPING`.
+### Local Machine Hardware Lock on "Hard resetting via RTS pin..."
 
-### Now Playing
-- Header: logo Spotify + teks "now playing" + animasi EQ bar
-- Judul lagu (scroll otomatis kalau terlalu panjang)
-- Nama artist
-- Progress bar + timer posisi/durasi
+If your local deployment compiling console hangs indefinitely at the physical termination indicator block line during a flash sequence while your connected display remains blank, **your code has compiled and transferred perfectly**. This occurs when the host system USB-to-UART bridge driver hardware chip fails to cleanly trigger the automatic electrical sequence to reset the physical ESP32 pin lines.
 
-### Lyrics Mode
-Aktif otomatis kalau lagu punya lirik tersinkronisasi. Menampilkan:
-- Baris lirik **sekarang** (highlight/invert)
-- Baris lirik **berikutnya** (kecil, dengan prefix `>>`)
-- Progress bar di bawah
+* **Immediate Fix:** Press the onboard **EN** (or **RST**) tactile button located directly adjacent to the physical Micro-USB/Type-C interface slot once. This forces a cold hardware restart execution cycle.
+* **Continuous Error Prevention:** Completely isolate the microcontroller device unit framework asset pipeline by detaching the physical USB cable connector entirely for 10 full seconds, allowing internal board capacitors to discharge completely. Re-attach to an alternative native port layout channel interface hub.
 
----
+### Memory Optimization Mapping (83%+ Flash Allocation Warning)
 
-## 🔧 Troubleshooting
+The comprehensive cryptographic structure blocks utilized by automated JSON stream data structures consume significant space within the micro-controller flash allocations. If your Arduino compiling screen returns an absolute allocation alert boundary notice, switch the system partitioning configuration template:
 
-### Bot tidak detect lagu Spotify
-- Pastikan **Presence Intent** sudah diaktifkan di Developer Portal
-- Pastikan akun Discord kamu ada di server yang sama dengan bot
-- Pastikan status Discord kamu **tidak** di-set ke invisible
-- Pastikan aplikasi Spotify terhubung ke Discord (Settings Discord → Connections)
+1. Open **Tools** menu panel structure on Arduino IDE.
+2. Access the **Partition Scheme** structural configuration drop-down index block track layout row.
+3. Switch configuration from *Default* to **"Huge APP (3MB No OTA / 1MB SPIFFS)"**.
+4. Re-run your compile framework program pipeline to reduce your system storage profile down safely below a clean ~35% threshold boundary.
 
-### ESP32 tidak bisa konek ke server
-- Cek IP address di `SERVER_URL` sudah benar
-- Pastikan port 3000 tidak diblokir firewall
-- Test dulu dari PC: `curl http://IP_KAMU:3000/now-playing`
+### Terminal Communication Tracking via `HTTP code: -1`
 
-### Lirik tidak muncul / tidak sinkron
-- Tidak semua lagu ada di database lrclib.net
-- Coba sesuaikan nilai `LYRIC_LEAD` di `bot.py` (default `2.4` detik)
-- Cek endpoint debug: `http://IP_KAMU:3000/debug`
+If your Serial Monitor tracking window continuously loops a `-1` status return, it indicates **`HTTPC_ERROR_CONNECTION_REFUSED`**. The ESP32 is functioning normally but can't establish a handshake with the host server address.
 
-### OLED tidak menyala
-- Cek wiring SDA/SCL
-- Cek alamat I2C OLED kamu (default SH1106 biasanya `0x3C`)
-- Kalau pakai pin I2C berbeda, ubah di `Wire.begin(SDA_PIN, SCL_PIN)`
+* Ensure both the ESP32 and the machine hosting `bot.py` are attached to the exact same Wi-Fi network SSID configuration name mesh infrastructure.
+* Confirm your host laptop's local IPv4 network address mapping index hasn't shifted by validating metrics via `ipconfig`.
+* Add an absolute inbound exclusion exception rule to your native Windows Defender or Linux OS Firewall security management framework layer blocks to permit traffic over port `3000`.
 
 ---
 
-## 📡 API Endpoint
+## 📡 API Endpoint Definitions
 
 ### `GET /now-playing`
-Response saat musik diputar:
+
+Returns the structural status of the active tracking stream parameters:
+
 ```json
 {
-  "title": "string",
-  "artist": "string",
+  "title": "Tampar",
+  "artist": "Juicy Luicy",
   "playing": true,
-  "position_ms": 12345,
-  "duration_ms": 200000,
-  "lyric_prev": "string",
-  "lyric_curr": "string",
-  "lyric_next": "string"
+  "position_ms": 171136,
+  "duration_ms": 202824,
+  "lyric_prev": "Tutup air mata",
+  "lyric_curr": "Tiga tahun tak terasa, masih kau yang ada",
+  "lyric_next": "Bodoh yang sebenarnya"
 }
-```
 
-Response saat tidak ada musik:
-```json
-{ "playing": false }
-```
-
-### `GET /debug`
-Menampilkan state internal bot dan sample lirik yang tersimpan di cache.
-
----
-
-## 📦 Dependencies Lengkap
-
-### Python (`bot.py`)
-```
-discord.py>=2.0
-aiohttp
-```
-(Semua lainnya — `asyncio`, `json`, `re`, `urllib` — sudah bawaan Python)
-
-### Arduino (`esp32.ino`)
-```
-U8g2
-ArduinoJson
-WiFi (bawaan ESP32)
-HTTPClient (bawaan ESP32)
 ```
 
 ---
 
 ## Credit
 
-Created by EkiZR  
+Created by EkiZR
+
 Instagram: https://www.instagram.com/ekizr_/?hl=id
+
+```
+
+```
