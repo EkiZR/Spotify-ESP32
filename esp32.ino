@@ -7,9 +7,9 @@
 // ════════════════════════════════════════════════════════
 //  KONFIGURASI
 // ════════════════════════════════════════════════════════
-const char* WIFI_SSID = "Nama Wifi"; 
-const char* WIFI_PASS = "Password Wifi";
-const char* SERVER_URL = "http://<IP_ADDRESS>:3000/now-playing";
+const char* WIFI_SSID = "";
+const char* WIFI_PASS = "";
+const char* SERVER_URL = "http://127.0.0.1:3000/now-playing"; // Change to your server using IPV4 address, e.g. "http://192.168.1.100:3000/now-playing"
 
 // ════════════════════════════════════════════════════════
 //  HARDWARE
@@ -126,19 +126,41 @@ void updateScroll() {
 }
 
 // ════════════════════════════════════════════════════════
-//  FETCH
+//  FETCH — FIX: buffer 2048 + debug Serial
 // ════════════════════════════════════════════════════════
 unsigned long lastFetch = 0;
 
 void fetchData() {
-  if (WiFi.status() != WL_CONNECTED) return;
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[FETCH] WiFi not connected!");
+    return;
+  }
+
   HTTPClient http;
   http.begin(SERVER_URL);
-  http.setTimeout(2000);
+  http.setTimeout(3000);
   int code = http.GET();
+
+  Serial.print("[FETCH] HTTP code: ");
+  Serial.println(code);
+
   if (code == 200) {
-    StaticJsonDocument<768> doc;
-    if (!deserializeJson(doc, http.getString())) {
+    // ── FIX: simpan dulu ke String, baru parse ──
+    String payload = http.getString();
+
+    Serial.print("[FETCH] Payload length: ");
+    Serial.println(payload.length());
+    Serial.println("[FETCH] Payload: ");
+    Serial.println(payload);
+
+    // ── FIX: naikkan buffer ke 2048 ──
+    StaticJsonDocument<2048> doc;
+    DeserializationError err = deserializeJson(doc, payload);
+
+    if (err) {
+      Serial.print("[FETCH] JSON parse error: ");
+      Serial.println(err.c_str());
+    } else {
       String newTitle = String(doc["title"] | "");
       if (newTitle != currTitle) {
         currTitle = newTitle;
@@ -159,8 +181,22 @@ void fetchData() {
       }
       lyricNext = String(doc["lyric_next"] | "");
       screenMode = (lyricCurr.length() > 0) ? 1 : 0;
+
+      // Debug hasil parse
+      Serial.print("[FETCH] Title: ");
+      Serial.println(currTitle);
+      Serial.print("[FETCH] Artist: ");
+      Serial.println(currArtist);
+      Serial.print("[FETCH] Playing: ");
+      Serial.println(playing ? "true" : "false");
+      Serial.print("[FETCH] Lyric: ");
+      Serial.println(lyricCurr);
     }
+  } else {
+    Serial.print("[FETCH] Error, HTTP code: ");
+    Serial.println(code);
   }
+
   http.end();
 }
 
@@ -527,7 +563,7 @@ void drawIdle() {
 }
 
 // ════════════════════════════════════════════════════════
-//  SCREEN: NOW PLAYING — FIX TIMER
+//  SCREEN: NOW PLAYING
 // ════════════════════════════════════════════════════════
 void drawNowPlaying() {
   u8g2.clearBuffer();
@@ -563,12 +599,10 @@ void drawNowPlaying() {
   int posW = strlen(tPos) * 4;
   int durW = strlen(tDur) * 4;
 
-  // ── Timer teks DULU (sebelum bar supaya tidak tertimpa) ──
   u8g2.setFont(u8g2_font_4x6_tr);
-  u8g2.drawStr(0, 55, tPos);           // kiri bawah
-  u8g2.drawStr(128 - durW, 55, tDur);  // kanan bawah
+  u8g2.drawStr(0, 55, tPos);
+  u8g2.drawStr(128 - durW, 55, tDur);
 
-  // ── Progress bar di tengah antara dua teks ──
   int barX = posW + 3;
   int barE = 128 - durW - 3;
   int barW = barE - barX;
@@ -576,12 +610,8 @@ void drawNowPlaying() {
   if (barW > 4) {
     int pw = (durationMs > 0) ? map(posMs, 0, durationMs, 0, barW) : 0;
     pw = constrain(pw, 0, barW);
-
-    // Track line
     u8g2.drawHLine(barX, 50, barW);
-    // Fill
     if (pw > 0) u8g2.drawBox(barX, 49, pw, 3);
-    // Titik playhead
     u8g2.drawDisc(barX + pw, 50, 2);
   }
 
@@ -641,7 +671,6 @@ void drawLyrics() {
 
 // ════════════════════════════════════════════════════════
 //  BOOT: ANIMASI TYPEWRITER
-//  Cetak teks karakter per karakter seperti terminal
 // ════════════════════════════════════════════════════════
 void typewriterLine(const char* text, int x, int y, int delayMs) {
   char buf[64] = "";
@@ -649,16 +678,14 @@ void typewriterLine(const char* text, int x, int y, int delayMs) {
   for (int i = 0; i < len; i++) {
     strncat(buf, text + i, 1);
     u8g2.setDrawColor(0);
-    u8g2.drawBox(x, y - 7, 128, 9);  // hapus area baris
+    u8g2.drawBox(x, y - 7, 128, 9);
     u8g2.setDrawColor(1);
     u8g2.drawStr(x, y, buf);
-    // Kursor berkedip
     int cx = x + u8g2.getUTF8Width(buf);
     u8g2.drawVLine(cx, y - 6, 7);
     u8g2.sendBuffer();
     delay(delayMs);
   }
-  // Hapus kursor setelah selesai
   u8g2.setDrawColor(0);
   int cx = x + u8g2.getUTF8Width(buf);
   u8g2.drawVLine(cx, y - 6, 7);
@@ -667,28 +694,14 @@ void typewriterLine(const char* text, int x, int y, int delayMs) {
 }
 
 // ════════════════════════════════════════════════════════
-//  BOOT: ANIMASI BAR MENGISI
-// ════════════════════════════════════════════════════════
-void animateFillBar(int x, int y, int w, int h, int steps, int stepDelay) {
-  for (int i = 0; i <= steps; i++) {
-    int fillW = map(i, 0, steps, 0, w);
-    u8g2.setDrawColor(1);
-    u8g2.drawFrame(x, y, w, h);
-    if (fillW > 0) u8g2.drawBox(x, y, fillW, h);
-    u8g2.sendBuffer();
-    delay(stepDelay);
-  }
-}
-
-// ════════════════════════════════════════════════════════
-//  SETUP — BOOT SEQUENCE ANIMASI
+//  SETUP — BOOT SEQUENCE
 // ════════════════════════════════════════════════════════
 void setup() {
   Serial.begin(115200);
   Wire.begin(21, 22);
   u8g2.begin();
 
-  // ── FASE 1: Logo masuk dari atas ──
+  // FASE 1: Logo masuk dari atas
   for (int yy = -32; yy <= 4; yy += 3) {
     u8g2.clearBuffer();
     u8g2.drawXBMP(48, yy, 32, 32, logo_spotify_32);
@@ -696,17 +709,15 @@ void setup() {
     delay(18);
   }
 
-  // ── FASE 2: Connecting WiFi ──
+  // FASE 2: Connecting WiFi
   WiFi.begin(WIFI_SSID, WIFI_PASS);
 
   u8g2.setFont(u8g2_font_5x7_tr);
-  // Ketik "Connecting..."
   u8g2.clearBuffer();
   u8g2.drawXBMP(48, 4, 32, 32, logo_spotify_32);
   u8g2.sendBuffer();
   typewriterLine("Connecting...", 20, 46, 60);
 
-  // Progress bar WiFi animasi
   u8g2.drawFrame(14, 54, 100, 6);
   u8g2.sendBuffer();
 
@@ -724,17 +735,14 @@ void setup() {
     delay(200);
   }
 
-  // Tunggu benar-benar konek
   int timeout = 0;
   while (WiFi.status() != WL_CONNECTED && timeout < 30) {
     delay(500);
     timeout++;
   }
 
-  // ── FASE 3: Hasil konek ──
+  // FASE 3: Hasil konek
   if (WiFi.status() == WL_CONNECTED) {
-
-    // Bar penuh sampai 100
     for (int p = loadProgress; p <= 100; p += 2) {
       u8g2.clearBuffer();
       u8g2.drawXBMP(48, 4, 32, 32, logo_spotify_32);
@@ -747,7 +755,6 @@ void setup() {
     }
     delay(300);
 
-    // ── FADE IN teks "Connected!" ──
     u8g2.clearBuffer();
     u8g2.drawXBMP(48, 4, 32, 32, logo_spotify_32);
     u8g2.setFont(u8g2_font_6x10_tr);
@@ -755,25 +762,17 @@ void setup() {
     u8g2.sendBuffer();
     delay(800);
 
-    // ── Layar SYSTEM ONLINE bergaya terminal ──
     u8g2.clearBuffer();
     u8g2.sendBuffer();
     delay(100);
 
     u8g2.setFont(u8g2_font_4x6_tr);
-
-    // Baris 1
     typewriterLine("> SYSTEM ONLINE", 2, 10, 45);
     delay(100);
-
-    // Baris 2
     typewriterLine("> WiFi : OK", 2, 20, 45);
     delay(100);
-
-    // Baris 3
     typewriterLine("> Server: checking", 2, 30, 30);
     delay(200);
-    // Update baris 3 jadi OK
     u8g2.setDrawColor(0);
     u8g2.drawBox(2, 22, 126, 9);
     u8g2.setDrawColor(1);
@@ -781,21 +780,17 @@ void setup() {
     u8g2.sendBuffer();
     delay(300);
 
-    // Baris 4: IP Address
     String ipLine = "> IP: " + WiFi.localIP().toString();
     typewriterLine(ipLine.c_str(), 2, 40, 35);
     delay(200);
 
-    // Garis pemisah
     u8g2.drawHLine(0, 44, 128);
     u8g2.sendBuffer();
     delay(200);
 
-    // Baris 5: Ready
     typewriterLine("> Spotify: READY", 2, 54, 40);
     delay(200);
 
-    // Blinking "READY" 3x
     for (int i = 0; i < 3; i++) {
       u8g2.setDrawColor(0);
       u8g2.drawBox(2, 46, 126, 9);
@@ -809,7 +804,6 @@ void setup() {
     delay(600);
 
   } else {
-    // Gagal konek
     u8g2.clearBuffer();
     u8g2.setFont(u8g2_font_5x7_tr);
     drawCenterText("Connection Failed!", 30);
